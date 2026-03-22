@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>GIRASOL</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="700" height="750"></canvas>
+<script>
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+
+// Turtle emulator
+// turtle coords: origin = center, Y up. Canvas: origin = top-left, Y down.
+// heading: 0 = north (up), clockwise positive (like Python turtle)
+const OX = 350, OY = 390; // origin on canvas
+
+let tx = 0, ty = -40;        // turtle position (turtle coords)
+let heading = 90;            // turtle heading (degrees, 0=north, CW)
+let penDown = false;
+let penColor = "yellow";
+
+const toCx = x => OX + x;
+const toCy = y => OY - y;
+
+// Convert turtle heading to canvas angle (radians)
+// turtle 0=north(up), CW. canvas 0=east, CCW.
+// canvas_angle = -(heading - 90) * PI/180  =>  (90 - heading) * PI/180
+const h2r = h => (90 - h) * Math.PI / 180;
+
+function moveTo(x, y) {
+  if (penDown) {
+    ctx.beginPath();
+    ctx.strokeStyle = penColor;
+    ctx.lineWidth = 1;
+    ctx.moveTo(toCx(tx), toCy(ty));
+    ctx.lineTo(toCx(x),  toCy(y));
+    ctx.stroke();
+  }
+  tx = x; ty = y;
+}
+
+function forward(d) {
+  const r = h2r(heading);
+  moveTo(tx + Math.cos(r)*d, ty + Math.sin(r)*d);
+}
+
+function rt(deg){ heading = (heading + deg) % 360; }
+function lt(deg){ heading = (heading - deg + 36000) % 360; }
+
+// turtle circle(radius, extent):
+// - positive radius → center is LEFT of heading
+// - draws counter-clockwise (left turn) for positive radius
+// We approximate with many small forward+turn steps for accuracy
+function circle(radius, extent) {
+  if (extent === undefined) extent = 360;
+  const steps = Math.ceil(Math.abs(extent) * 1.5); // more steps = smoother
+  const stepAngle = extent / steps;
+  const stepLen = 2 * Math.abs(radius) * Math.sin(Math.abs(stepAngle / 2) * Math.PI / 180);
+  const sign = radius >= 0 ? 1 : -1;
+  for (let i = 0; i < steps; i++) {
+    forward(stepLen);
+    lt(stepAngle * sign);  // left turn for positive radius
+  }
+}
+
+// ── Build the command queue ────────────────────────────────────────────────
+const cmds = [];
+const Q = (fn, ...a) => cmds.push([fn, a]);
+
+// goto(0, -40) + pendown
+Q("goto", 0, -40);
+Q("pendown");
+
+// 16 petals, each made of 18 nested arc pairs
+for (let i = 0; i < 16; i++) {
+  for (let j = 0; j < 18; j++) {
+    Q("color", "yellow");
+    Q("rt",    90);
+    Q("circle", 150 - j*6, 90);
+    Q("lt",    90);
+    Q("circle", 150 - j*6, 90);
+    Q("rt",    180);
+  }
+  Q("circle", 40, 24);   // step to next petal position
+}
+
+// Centro
+Q("penup");
+Q("goto", 0, 0);
+Q("fillCircle", 42, "#5C2E00");   // brown circle
+
+// Semillas Fibonacci
+const phi = 137.508 * Math.PI / 180;
+for (let i = 0; i < 200; i++) {
+  const r = 4 * Math.sqrt(i);
+  const theta = i * phi;
+  const sx = r * Math.cos(theta);
+  const sy = r * Math.sin(theta);
+  Q("penup");
+  Q("goto", sx, sy);
+  Q("setheading", i * 137.508);
+  Q("pendown");
+  if (i < 160) Q("stamp");
+}
+
+// Texto
+Q("penup");
+Q("goto", 0, 290);
+Q("text", " ESPERO TE GUSTE ", "#fff");
+
+// ── Execute queue frame by frame ───────────────────────────────────────────
+let qi = 0;
+const BATCH = 12; // comandos por frame — ajusta para más velocidad
+
+function run() {
+  let count = 0;
+  while (qi < cmds.length && count < BATCH) {
+    const [fn, args] = cmds[qi++];
+    switch(fn) {
+      case "goto":
+        tx = args[0]; ty = args[1];
+        break;
+      case "pendown": penDown = true;  break;
+      case "penup":   penDown = false; break;
+      case "color":   penColor = args[0]; break;
+      case "rt":      rt(args[0]); break;
+      case "lt":      lt(args[0]); break;
+      case "circle":  circle(args[0], args[1]); break;
+      case "setheading": heading = args[0] % 360; break;
+      case "fillCircle":
+        ctx.beginPath();
+        ctx.arc(toCx(tx), toCy(ty), args[0], 0, Math.PI*2);
+        ctx.fillStyle = args[1];
+        ctx.fill();
+        break;
+      case "stamp":
+        ctx.beginPath();
+        ctx.arc(toCx(tx), toCy(ty), 3, 0, Math.PI*2);
+        ctx.fillStyle = "#3a1800";
+        ctx.fill();
+        break;
+      case "text":
+        ctx.font = "bold 32px Georgia, serif";
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.fillText(args[0], toCx(0), toCy(ty));
+        break;
+    }
+    count++;
+  }
+  if (qi < cmds.length) requestAnimationFrame(run);
+}
+
+requestAnimationFrame(run);
+</script>
+</body>
+</html>
